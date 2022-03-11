@@ -25,12 +25,13 @@ forgit::log() {
         +s +m --tiebreak=index
         --bind=\"enter:execute($cmd | LESS='-r' less)\"
         --bind=\"ctrl-y:execute-silent(echo {} |grep -Eo '[a-f0-9]+' | head -1 | tr -d '[:space:]' |${FORGIT_COPY_CMD:-pbcopy})\"
+        --preview=\"$cmd\"
         $FORGIT_LOG_FZF_OPTS
     "
     graph=--graph
     [[ $FORGIT_LOG_GRAPH_ENABLE == false ]] && graph=
     eval "git log $graph --color=always --format='$forgit_log_format' $* $forgit_emojify" |
-        FZF_DEFAULT_OPTS="$opts" fzf --preview="$cmd"
+        FZF_DEFAULT_OPTS="$opts" fzf
 }
 
 # git diff viewer
@@ -53,11 +54,12 @@ forgit::diff() {
     opts="
         $FORGIT_FZF_DEFAULT_OPTS
         +m -0 --bind=\"enter:execute($cmd |LESS='-r' less)\"
+        --preview=\"$cmd\"
         $FORGIT_DIFF_FZF_OPTS
     "
     eval "git diff --name-status $commits -- ${files[*]} | sed -E 's/^([[:alnum:]]+)[[:space:]]+(.*)$/[\1]\t\2/'" |
         sed 's/\t/  ->  /2' | expand -t 8 |
-        FZF_DEFAULT_OPTS="$opts" fzf --preview="$cmd"
+        FZF_DEFAULT_OPTS="$opts" fzf
 }
 
 # git add selector
@@ -86,12 +88,13 @@ forgit::add() {
     opts="
         $FORGIT_FZF_DEFAULT_OPTS
         -0 -m --nth 2..,..
+        --preview=\"$preview\"
         $FORGIT_ADD_FZF_OPTS
     "
     files=$(git -c color.status=always -c status.relativePaths=true status -su |
         grep -F -e "$changed" -e "$unmerged" -e "$untracked" |
         sed -E 's/^(..[^[:space:]]*)[[:space:]]+(.*)$/[\1]  \2/' |
-        FZF_DEFAULT_OPTS="$opts" fzf --preview="$preview" |
+        FZF_DEFAULT_OPTS="$opts" fzf |
         sh -c "$extract")
     [[ -n "$files" ]] && echo "$files"| tr '\n' '\0' |xargs -0 -I% git add % && git status -su && return
     echo 'Nothing to add.'
@@ -105,9 +108,10 @@ forgit::reset::head() {
     opts="
         $FORGIT_FZF_DEFAULT_OPTS
         -m -0
+        --preview=\"$cmd\"
         $FORGIT_RESET_HEAD_FZF_OPTS
     "
-    files="$(git diff --cached --name-only --relative | FZF_DEFAULT_OPTS="$opts" fzf --preview="$cmd")"
+    files="$(git diff --cached --name-only --relative | FZF_DEFAULT_OPTS="$opts" fzf)"
     [[ -n "$files" ]] && echo "$files" | tr '\n' '\0' | xargs -0 -I% git reset -q HEAD % && git status --short && return
     echo 'Nothing to unstage.'
 }
@@ -120,9 +124,10 @@ forgit::stash::show() {
     opts="
         $FORGIT_FZF_DEFAULT_OPTS
         +s +m -0 --tiebreak=index --bind=\"enter:execute($cmd | LESS='-r' less)\"
+        --preview=\"$cmd\"
         $FORGIT_STASH_FZF_OPTS
     "
-    git stash list | FZF_DEFAULT_OPTS="$opts" fzf --preview="$cmd"
+    git stash list | FZF_DEFAULT_OPTS="$opts" fzf
 }
 
 # git clean selector
@@ -148,10 +153,11 @@ forgit::cherry::pick() {
     preview="echo {1} | xargs -I% git show --color=always % | $forgit_show_pager"
     opts="
         $FORGIT_FZF_DEFAULT_OPTS
+        --preview=\"$preview\"
         -m -0
     "
     git cherry "$base" "$target" --abbrev -v | cut -d ' ' -f2- |
-        FZF_DEFAULT_OPTS="$opts" fzf --preview="$preview" | cut -d' ' -f1 |
+        FZF_DEFAULT_OPTS="$opts" fzf | cut -d' ' -f1 |
         xargs -I% git cherry-pick %
 }
 
@@ -167,9 +173,10 @@ forgit::rebase() {
         $FORGIT_FZF_DEFAULT_OPTS
         +s +m --tiebreak=index
         --bind=\"ctrl-y:execute-silent(echo {} |grep -Eo '[a-f0-9]+' | head -1 | tr -d '[:space:]' |${FORGIT_COPY_CMD:-pbcopy})\"
+        --preview=\"$preview\"
         $FORGIT_REBASE_FZF_OPTS
     "
-    commit=$(eval "$cmd" | FZF_DEFAULT_OPTS="$opts" fzf --preview="$preview" |
+    commit=$(eval "$cmd" | FZF_DEFAULT_OPTS="$opts" fzf |
         grep -Eo '[a-f0-9]+' | head -1)
     [[ -n "$commit" ]] && git rebase -i "$commit"
 }
@@ -187,9 +194,10 @@ forgit::fixup() {
         $FORGIT_FZF_DEFAULT_OPTS
         +s +m --tiebreak=index
         --bind=\"ctrl-y:execute-silent(echo {} |grep -Eo '[a-f0-9]+' | head -1 | tr -d '[:space:]' |${FORGIT_COPY_CMD:-pbcopy})\"
+        --preview=\"$preview\"
         $FORGIT_FIXUP_FZF_OPTS
     "
-    target_commit=$(eval "$cmd" | FZF_DEFAULT_OPTS="$opts" fzf --preview="$preview" |
+    target_commit=$(eval "$cmd" | FZF_DEFAULT_OPTS="$opts" fzf |
         grep -Eo '[a-f0-9]+' | head -1)
     if [[ -n "$target_commit" ]] && git commit --fixup "$target_commit"; then
         # "$target_commit~" is invalid when the commit is the first commit, but we can use "--root" instead
@@ -214,9 +222,10 @@ forgit::checkout::file() {
     opts="
         $FORGIT_FZF_DEFAULT_OPTS
         -m -0
+        --preview=\"$cmd\"
         $FORGIT_CHECKOUT_FILE_FZF_OPTS
     "
-    files="$(git ls-files --modified "$(git rev-parse --show-toplevel)"| FZF_DEFAULT_OPTS="$opts" fzf --preview="$cmd")"
+    files="$(git ls-files --modified "$(git rev-parse --show-toplevel)"| FZF_DEFAULT_OPTS="$opts" fzf)"
     [[ -n "$files" ]] && echo "$files" | tr '\n' '\0' | xargs -0 -I% git checkout %
 }
 
@@ -230,9 +239,10 @@ forgit::checkout::branch() {
     opts="
         $FORGIT_FZF_DEFAULT_OPTS
         +s +m --tiebreak=index --header-lines=1
+        --preview=\"$preview\"
         $FORGIT_CHECKOUT_BRANCH_FZF_OPTS
         "
-    branch="$(eval "$cmd" | FZF_DEFAULT_OPTS="$opts" fzf --preview="$preview" | awk '{print $1}')"
+    branch="$(eval "$cmd" | FZF_DEFAULT_OPTS="$opts" fzf | awk '{print $1}')"
     [[ -z "$branch" ]] && return 1
 
     # track the remote branch if possible
@@ -258,9 +268,10 @@ forgit::checkout::tag() {
     opts="
         $FORGIT_FZF_DEFAULT_OPTS
         +s +m --tiebreak=index
+        --preview=\"$preview\"
         $FORGIT_CHECKOUT_TAG_FZF_OPTS
     "
-    tag="$(eval "$cmd" | FZF_DEFAULT_OPTS="$opts" fzf --preview="$preview")"
+    tag="$(eval "$cmd" | FZF_DEFAULT_OPTS="$opts" fzf)"
     [[ -z "$tag" ]] && return 1
     git checkout "$tag"
 }
@@ -275,12 +286,13 @@ forgit::checkout::commit() {
         $FORGIT_FZF_DEFAULT_OPTS
         +s +m --tiebreak=index
         --bind=\"ctrl-y:execute-silent(echo {} |grep -Eo '[a-f0-9]+' | head -1 | tr -d '[:space:]' |${FORGIT_COPY_CMD:-pbcopy})\"
+        --preview=\"$cmd\"
         $FORGIT_COMMIT_FZF_OPTS
     "
     graph=--graph
     [[ $FORGIT_LOG_GRAPH_ENABLE == false ]] && graph=
     eval "git log $graph --color=always --format='$forgit_log_format' $forgit_emojify" |
-        FZF_DEFAULT_OPTS="$opts" fzf --preview="$cmd" |grep -Eo '[a-f0-9]+' |head -1 |xargs -I% git checkout % --
+        FZF_DEFAULT_OPTS="$opts" fzf |grep -Eo '[a-f0-9]+' |head -1 |xargs -I% git checkout % --
 }
 
 # git ignore generator
@@ -295,11 +307,12 @@ forgit::ignore() {
     opts="
         $FORGIT_FZF_DEFAULT_OPTS
         -m --preview-window='right:70%'
+        --preview=\"eval $cmd\"
         $FORGIT_IGNORE_FZF_OPTS
     "
     # shellcheck disable=SC2206,2207
     IFS=$'\n' args=($@) && [[ $# -eq 0 ]] && args=($(forgit::ignore::list | nl -nrn -w4 -s'  ' |
-        FZF_DEFAULT_OPTS="$opts" fzf --preview="eval $cmd" | awk '{print $2}'))
+        FZF_DEFAULT_OPTS="$opts" fzf | awk '{print $2}'))
     [ ${#args[@]} -eq 0 ] && return 1
     # shellcheck disable=SC2068
     forgit::ignore::get ${args[@]}
