@@ -71,6 +71,20 @@ hash emojify &>/dev/null && _forgit_emojify='|emojify'
 # extract the first git sha occurring in the input and strip trailing newline
 _forgit_extract_sha="grep -Eo '[a-f0-9]+' | head -1 | tr -d '[:space:]'"
 
+# parse a space separated string into an array
+# arrays parsed with this function are global
+_forgit_parse_array() {
+    ${IFS+"false"} && unset old_IFS || old_IFS="$IFS"
+    # read the value of the second argument
+    # into an array that has the name of the first argument
+    IFS=" " read -r -a "$1" <<< "$2"
+    ${old_IFS+"false"} && unset IFS || IFS="$old_IFS"
+}
+
+# parse environment variables into global arrays
+# this allows using them properly quoted without word splitting or glob expansion
+_forgit_blame_git_opts=()
+_forgit_parse_array _forgit_blame_git_opts "$FORGIT_BLAME_GIT_OPTS"
 _forgit_pager=${FORGIT_PAGER:-$(git config core.pager || echo 'cat')}
 _forgit_show_pager=${FORGIT_SHOW_PAGER:-$(git config pager.show || echo "$_forgit_pager")}
 _forgit_diff_pager=${FORGIT_DIFF_PAGER:-$(git config pager.diff || echo "$_forgit_pager")}
@@ -83,6 +97,9 @@ _forgit_log_preview_options="--graph --pretty=format:'$_forgit_log_format' --col
 _forgit_fullscreen_context=${FORGIT_FULLSCREEN_CONTEXT:-10}
 _forgit_preview_context=${FORGIT_PREVIEW_CONTEXT:-3}
 _forgit_is_file_tracked="(git ls-files {} --error-unmatch) &> /dev/null"
+_forgit_is_file_tracked() {
+    git ls-files "$1" --error-unmatch &> /dev/null
+}
 
 # git commit viewer
 _forgit_log() {
@@ -592,28 +609,37 @@ _forgit_revert_commit() {
     $git_revert "${commits[@]}"
 }
 
+_forgit_blame_preview() {
+    if _forgit_is_file_tracked "$1"; then
+        git blame "$@" "${_forgit_blame_git_opts[@]}" --date=short | $_forgit_blame_pager
+    else
+        echo "File not tracked"
+    fi
+}
+
+_forgit_git_blame() {
+    git blame "${_forgit_blame_git_opts[@]}" "$@"
+}
+
 # git blame viewer
 _forgit_blame() {
     _forgit_inside_work_tree || return 1
-    local git_blame opts flags preview file
-    git_blame="git blame $FORGIT_BLAME_GIT_OPTS"
-    _forgit_contains_non_flags "$@" && { $git_blame "$@"; return $?; }
+    local opts flags file
+    _forgit_contains_non_flags "$@" && { _forgit_git_blame "$@"; return $?; }
     opts="
         $FORGIT_FZF_DEFAULT_OPTS
         $FORGIT_BLAME_FZF_OPTS
     "
-    flags=$(git rev-parse --flags "$@")
-    preview="
-        if $_forgit_is_file_tracked; then
-            git blame {} --date=short $FORGIT_BLAME_GIT_OPTS $flags | $_forgit_blame_pager
-        else
-            echo File not tracked
-        fi
-    "
-    file=$(FZF_DEFAULT_OPTS="$opts" fzf --preview="$preview")
+    ${IFS+"false"} && unset old_IFS || old_IFS="$IFS"
+    IFS=$'\n'
+    #shellcheck disable=2207
+    flags=($(git rev-parse --flags "$@"))
+    ${old_IFS+"false"} && unset IFS || IFS="$old_IFS"
+    # flags is not quoted here, which is fine given that they are retrieved
+    # with git rev-parse and can only contain flags
+    file=$(FZF_DEFAULT_OPTS="$opts" fzf --preview="$FORGIT blame_preview {} ${flags[*]}")
     [[ -z "$file" ]] && return 1
-    # shellcheck disable=2086
-    eval $git_blame "$file" "$flags"
+    _forgit_git_blame "$file" "${flags[@]}"
 }
 
 # git ignore generator
@@ -668,7 +694,7 @@ _forgit_ignore_clean() {
     [[ -d "$FORGIT_GI_REPO_LOCAL" ]] && rm -rf "$FORGIT_GI_REPO_LOCAL"
 }
 
-valid_commands=(
+public_commands=(
     "add"
     "blame"
     "branch_delete"
@@ -690,18 +716,22 @@ valid_commands=(
     "stash_push"
 )
 
+private_commands=(
+    "blame_preview"
+)
+
 cmd="$1"
 shift
 
 # shellcheck disable=SC2076
-if [[ ! " ${valid_commands[*]} " =~ " ${cmd} " ]]; then
+if [[ ! " ${public_commands[*]} " =~ " ${cmd} " ]] && [[ ! " ${private_commands[*]} " =~ " ${cmd} " ]]; then
     if [[ -z "$cmd" ]]; then
         printf "forgit: missing command\n\n"
     else
         printf "forgit: '%s' is not a valid forgit command.\n\n" "$cmd"
     fi
     printf "The following commands are supported:\n"
-    printf "\t%s\n" "${valid_commands[@]}"
+    printf "\t%s\n" "${public_commands[@]}"
     exit 1
 fi
 
