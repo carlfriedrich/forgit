@@ -99,6 +99,8 @@ _forgit_branch_delete_git_opts=()
 _forgit_parse_array _forgit_branch_delete_git_opts "$FORGIT_BRANCH_DELETE_GIT_OPTS"
 _forgit_checkout_commit_git_opts=()
 _forgit_parse_array _forgit_checkout_commit_git_opts "$FORGIT_CHECKOUT_COMMIT_GIT_OPTS"
+_forgit_checkout_tag_git_opts=()
+_forgit_parse_array _forgit_checkout_tag_git_opts "$FORGIT_CHECKOUT_TAG_GIT_OPTS"
 _forgit_pager=${FORGIT_PAGER:-$(git config core.pager || echo 'cat')}
 _forgit_show_pager=${FORGIT_SHOW_PAGER:-$(git config pager.show || echo "$_forgit_pager")}
 _forgit_diff_pager=${FORGIT_DIFF_PAGER:-$(git config pager.diff || echo "$_forgit_pager")}
@@ -525,23 +527,24 @@ _forgit_checkout_branch() {
     fi
 }
 
+_forgit_git_checkout_tag() {
+    git checkout "${_forgit_checkout_tag_git_opts[@]}" "$@"
+}
+
 # git checkout-tag selector
 _forgit_checkout_tag() {
     _forgit_inside_work_tree || return 1
-    local git_checkout cmd opts preview
-    git_checkout="git checkout $FORGIT_CHECKOUT_TAG_GIT_OPTS"
-    [[ $# -ne 0 ]] && { $git_checkout "$@"; return $?; }
-    cmd="git tag -l --sort=-v:refname"
-    preview="git log {1} $_forgit_log_preview_options"
+    local opts
+    [[ $# -ne 0 ]] && { _forgit_git_checkout_tag "$@"; return $?; }
     opts="
         $FORGIT_FZF_DEFAULT_OPTS
         +s +m --tiebreak=index
-        --preview=\"$preview\"
+        --preview=\"$FORGIT branch_preview {}\"
         $FORGIT_CHECKOUT_TAG_FZF_OPTS
     "
-    tag="$(eval "$cmd" | FZF_DEFAULT_OPTS="$opts" fzf)"
+    tag="$(git tag -l --sort=-v:refname | FZF_DEFAULT_OPTS="$opts" fzf)"
     [[ -z "$tag" ]] && return 1
-    $git_checkout "$tag"
+    _forgit_git_checkout_tag "$tag"
 }
 
 _forgit_checkout_commit_preview() {
@@ -570,7 +573,7 @@ _forgit_checkout_commit() {
         FZF_DEFAULT_OPTS="$opts" fzf | _forgit_extract_sha | xargs -I% "$FORGIT" "git_checkout_commit" % --
 }
 
-_forgit_branch_delete_preview() {
+_forgit_branch_preview() {
     git log "$1" "${_forgit_log_preview_options2[@]}"
 }
 
@@ -757,7 +760,7 @@ public_commands=(
 
 private_commands=(
     "blame_preview"
-    "branch_delete_preview"
+    "branch_preview"
     "checkout_commit_preview"
     "git_branch_delete"
     "git_checkout_commit"
