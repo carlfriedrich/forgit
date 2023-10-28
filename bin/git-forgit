@@ -90,6 +90,8 @@ _forgit_blame_git_opts=()
 _forgit_parse_array _forgit_blame_git_opts "$FORGIT_BLAME_GIT_OPTS"
 _forgit_revert_commit_git_opts=()
 _forgit_parse_array _forgit_revert_commit_git_opts "$FORGIT_REVERT_COMMIT_GIT_OPTS"
+_forgit_branch_delete_git_opts=()
+_forgit_parse_array _forgit_branch_delete_git_opts "$FORGIT_BRANCH_DELETE_GIT_OPTS"
 _forgit_pager=${FORGIT_PAGER:-$(git config core.pager || echo 'cat')}
 _forgit_show_pager=${FORGIT_SHOW_PAGER:-$(git config pager.show || echo "$_forgit_pager")}
 _forgit_diff_pager=${FORGIT_DIFF_PAGER:-$(git config pager.diff || echo "$_forgit_pager")}
@@ -99,6 +101,7 @@ _forgit_enter_pager=${FORGIT_ENTER_PAGER:-"LESS='-r' less"}
 
 _forgit_log_format=${FORGIT_LOG_FORMAT:-%C(auto)%h%d %s %C(black)%C(bold)%cr%Creset}
 _forgit_log_preview_options="--graph --pretty=format:'$_forgit_log_format' --color=always --abbrev-commit --date=relative"
+_forgit_log_preview_options2=("--graph" "--pretty=format:$_forgit_log_format" "--color=always" "--abbrev-commit" "--date=relative")
 _forgit_fullscreen_context=${FORGIT_FULLSCREEN_CONTEXT:-10}
 _forgit_preview_context=${FORGIT_PREVIEW_CONTEXT:-3}
 _forgit_is_file_tracked="(git ls-files {} --error-unmatch) &> /dev/null"
@@ -555,24 +558,32 @@ _forgit_checkout_commit() {
         FZF_DEFAULT_OPTS="$opts" fzf | eval "$_forgit_extract_sha" | xargs -I% $git_checkout % --
 }
 
+_forgit_branch_delete_preview() {
+    git log "$1" "${_forgit_log_preview_options2[@]}"
+}
+
+_forgit_git_branch_delete() {
+    git branch "${_forgit_branch_delete_git_opts[@]}" "$@"
+}
+
 _forgit_branch_delete() {
     _forgit_inside_work_tree || return 1
-    local git_branch preview opts cmd branches
-    git_branch="git branch $FORGIT_BRANCH_DELETE_GIT_OPTS"
-    [[ $# -ne 0 ]] && { $git_branch -D "$@"; return $?; }
-    preview="git log {1} $_forgit_log_preview_options"
+    local opts branches
+    [[ $# -ne 0 ]] && { _forgit_git_branch_delete -D "$@"; return $?; }
 
     opts="
         $FORGIT_FZF_DEFAULT_OPTS
         +s --multi --tiebreak=index --header-lines=1
-        --preview=\"$preview\"
+        --preview=\"$FORGIT branch_preview {1}\"
         $FORGIT_BRANCH_DELETE_FZF_OPTS
     "
 
-    cmd="git branch --color=always | LC_ALL=C sort -k1.1,1.1 -rs"
-    branches=$(eval "$cmd" | FZF_DEFAULT_OPTS="$opts" fzf | awk '{print $1}')
-    # shellcheck disable=2086
-    echo -n "$branches" | tr '\n' '\0' | xargs -I{} -0 $git_branch -D {}
+    branches=$(
+        git branch --color=always |
+        LC_ALL=C sort -k1.1,1.1 -rs |
+        FZF_DEFAULT_OPTS="$opts" fzf |
+        awk '{print $1}')
+    echo -n "$branches" | tr '\n' '\0' | xargs -I{} -0 "$FORGIT" "git_branch_delete" -D {}
 }
 
 _forgit_revert_preview() {
@@ -734,6 +745,8 @@ public_commands=(
 
 private_commands=(
     "blame_preview"
+    "branch_delete_preview"
+    "git_branch_delete"
     "ignore_preview"
     "revert_preview"
 )
