@@ -89,8 +89,33 @@ _forgit_parse_array() {
     ${old_IFS+"false"} && unset IFS || IFS="$old_IFS"
 }
 
+# parse the input arguments and print only those after the "--"
+# separator as a single line of qouted arguments to stdout
+_forgit_quote_files() {
+    local files add
+    files=()
+    add=false
+    while (( "$#" )); do
+        case "$1" in
+            --)
+            add=true
+            shift
+            ;;
+            *)
+            if [ $add == true ]; then
+                files+=("'$1'")
+            fi
+            shift
+            ;;
+        esac
+    done
+    echo "${files[*]}"
+}
+
 # parse environment variables into global arrays
 # this allows using them properly quoted without word splitting or glob expansion
+_forgit_log_git_opts=()
+_forgit_parse_array _forgit_log_git_opts "$FORGIT_LOG_GIT_OPTS"
 _forgit_blame_git_opts=()
 _forgit_parse_array _forgit_blame_git_opts "$FORGIT_BLAME_GIT_OPTS"
 _forgit_revert_commit_git_opts=()
@@ -114,6 +139,7 @@ _forgit_ignore_pager=${FORGIT_IGNORE_PAGER:-$(hash bat &>/dev/null && echo 'bat 
 _forgit_blame_pager=${FORGIT_BLAME_PAGER:-$(git config pager.blame || echo "$_forgit_pager")}
 _forgit_enter_pager=${FORGIT_ENTER_PAGER:-"LESS='-r' less"}
 
+_forgit_log_graph_enable=${FORGIT_LOG_GRAPH_ENABLE:-"true"}
 _forgit_log_format=${FORGIT_LOG_FORMAT:-%C(auto)%h%d %s %C(black)%C(bold)%cr%Creset}
 _forgit_log_preview_options=("--graph" "--pretty=format:$_forgit_log_format" "--color=always" "--abbrev-commit" "--date=relative")
 _forgit_fullscreen_context=${FORGIT_FULLSCREEN_CONTEXT:-10}
@@ -123,25 +149,37 @@ _forgit_is_file_tracked() {
     git ls-files "$1" --error-unmatch &> /dev/null
 }
 
+_forgit_log_preview() {
+    local sha
+    sha=$(echo "$1" | _forgit_extract_sha)
+    shift
+    echo "$sha" | xargs -I% git show --color=always -U"$_forgit_preview_context" % -- "$@" | $_forgit_show_pager
+}
+
+_forgit_log_enter() {
+    local sha
+    sha=$(echo "$1" | _forgit_extract_sha)
+    shift
+    echo "$sha" | xargs -I% "${FORGIT}" diff %^! "$@"
+}
+
 # git commit viewer
 _forgit_log() {
     _forgit_inside_work_tree || return 1
-    local opts graph files log_format preview_cmd enter_cmd
-    files=$(sed -nE 's/.*-- (.*)/\1/p' <<< "$*") # extract files parameters for `git show` command
-    preview_cmd="echo {} | $_forgit_extract_sha | xargs -I% git show --color=always -U$_forgit_preview_context % -- $files | $_forgit_show_pager"
-    enter_cmd="echo {} | $_forgit_extract_sha | xargs -I% ${FORGIT} diff %^! $files"
+    local opts graph quoted_files log_format
+    quoted_files=$(_forgit_quote_files "$@")
     opts="
         $FORGIT_FZF_DEFAULT_OPTS
         +s +m --tiebreak=index
-        --bind=\"enter:execute($enter_cmd)\"
-        --bind=\"ctrl-y:execute-silent(echo {} | $_forgit_extract_sha | ${FORGIT_COPY_CMD:-pbcopy})\"
-        --preview=\"$preview_cmd\"
+        --bind=\"enter:execute($FORGIT log_enter {} $quoted_files)\"
+        --bind=\"ctrl-y:execute-silent($FORGIT yank_sha {})\"
+        --preview=\"$FORGIT log_preview {} $quoted_files\"
         $FORGIT_LOG_FZF_OPTS
     "
-    graph=--graph
-    [[ $FORGIT_LOG_GRAPH_ENABLE == false ]] && graph=
+    graph=()
+    [[ $_forgit_log_graph_enable == true ]] && graph=(--graph)
     log_format=${FORGIT_GLO_FORMAT:-$_forgit_log_format}
-    eval "git log $graph --color=always --format='$log_format' $FORGIT_LOG_GIT_OPTS $* $_forgit_emojify" |
+    git log "${graph[@]}" --color=always --format="$log_format" "${_forgit_log_git_opts[@]}" "$@" $_forgit_emojify |
         FZF_DEFAULT_OPTS="$opts" fzf
     fzf_exit_code=$?
     # exit successfully on 130 (ctrl-c/esc)
@@ -774,6 +812,8 @@ private_commands=(
     "ignore_preview"
     "revert_preview"
     "yank_sha"
+    "log_preview"
+    "log_enter"
 )
 
 cmd="$1"
