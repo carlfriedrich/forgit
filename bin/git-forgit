@@ -128,6 +128,8 @@ _forgit_checkout_tag_git_opts=()
 _forgit_parse_array _forgit_checkout_tag_git_opts "$FORGIT_CHECKOUT_TAG_GIT_OPTS"
 _forgit_checkout_branch_git_opts=()
 _forgit_parse_array _forgit_checkout_branch_git_opts "$FORGIT_CHECKOUT_BRANCH_GIT_OPTS"
+_forgit_checkout_file_git_opts=()
+_forgit_parse_array _forgit_checkout_file_git_opts "$FORGIT_CHECKOUT_FILE_GIT_OPTS"
 
 _forgit_checkout_branch_branch_git_opts=()
 _forgit_parse_array _forgit_checkout_branch_branch_git_opts "$FORGIT_CHECKOUT_BRANCH_BRANCH_GIT_OPTS"
@@ -512,21 +514,27 @@ _forgit_fixup() {
 
 }
 
+_forgit_checkout_file_preview() {
+    git diff --color=always -- "$1" | $_forgit_diff_pager
+}
+
+_forgit_git_checkout_file() {
+    git checkout "${_forgit_checkout_file_git_opts[@]}" "$@"
+}
+
 # git checkout-file selector
 _forgit_checkout_file() {
     _forgit_inside_work_tree || return 1
-    local git_checkout cmd files opts
-    git_checkout="git checkout $FORGIT_CHECKOUT_FILE_GIT_OPTS"
-    [[ $# -ne 0 ]] && { $git_checkout -- "$@"; return $?; }
-    cmd="git diff --color=always -- {} | $_forgit_diff_pager"
+    local files opts
+    [[ $# -ne 0 ]] && { _forgit_git_checkout_file -- "$@"; return $?; }
     opts="
         $FORGIT_FZF_DEFAULT_OPTS
         -m -0
-        --preview=\"$cmd\"
+        --preview=\"$FORGIT checkout_file_preview {}\"
         $FORGIT_CHECKOUT_FILE_FZF_OPTS
     "
     files="$(git ls-files --modified "$(git rev-parse --show-toplevel)"| FZF_DEFAULT_OPTS="$opts" fzf)"
-    [[ -n "$files" ]] && echo "$files" | tr '\n' '\0' | $git_checkout --pathspec-file-nul --pathspec-from-file -
+    [[ -n "$files" ]] && echo "$files" | tr '\n' '\0' | _forgit_git_checkout_file --pathspec-file-nul --pathspec-from-file -
 }
 
 _forgit_git_checkout_branch() {
@@ -807,6 +815,7 @@ private_commands=(
     "blame_preview"
     "branch_preview"
     "checkout_commit_preview"
+    "checkout_file_preview"
     "git_branch_delete"
     "git_checkout_commit"
     "ignore_preview"
