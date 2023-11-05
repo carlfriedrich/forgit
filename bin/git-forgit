@@ -116,6 +116,8 @@ _forgit_quote_files() {
 # this allows using them properly quoted without word splitting or glob expansion
 _forgit_log_git_opts=()
 _forgit_parse_array _forgit_log_git_opts "$FORGIT_LOG_GIT_OPTS"
+_forgit_diff_git_opts=()
+_forgit_parse_array _forgit_diff_git_opts "$FORGIT_DIFF_GIT_OPTS"
 _forgit_rebase_git_opts=()
 _forgit_parse_array _forgit_rebase_git_opts "$FORGIT_REBASE_GIT_OPTS"
 _forgit_fixup_git_opts=()
@@ -193,22 +195,7 @@ _forgit_log() {
     return $fzf_exit_code
 }
 
-# git diff viewer
-_forgit_diff() {
-    _forgit_inside_work_tree || return 1
-    local files opts commits repo get_files preview_cmd enter_cmd
-    [[ $# -ne 0 ]] && {
-        if git rev-parse "$1" -- &>/dev/null ; then
-            if [[ $# -gt 1 ]] && git rev-parse "$2" -- &>/dev/null; then
-                commits="$1 $2" && files=("${@:3}")
-            else
-                commits="$1" && files=("${@:2}")
-            fi
-        else
-            files=("$@")
-        fi
-    }
-    repo="$(git rev-parse --show-toplevel)"
+_forgit_get_files_from_diff_line() {
     # Construct a null-terminated list of the filenames
     # The input looks like one of these lines:
     #   [R100]  file  ->  another file
@@ -220,27 +207,71 @@ _forgit_diff() {
     #   oldfile\0
     # We have to do a two-step sed -> tr pipe because OSX's sed implementation does
     # not support the null-character directly.
-    get_files="echo {} | sed 's/.*] *//' | sed 's/  ->  /\\\n/' | tr '\\\n' '\\\0'"
-    # Similar to the line above, but only gets a single file from a single line
+    sed 's/.*] *//' | sed 's/  ->  /\n/' | tr '\n' '\0'
+}
+
+_forgit_get_single_file_from_diff_line() {
+    # Similar to the function above, but only gets a single file from a single line
     # Gets the new name of renamed files
-    get_file="echo {} | sed 's/.*] *//' | sed 's/.*->  //'"
+    sed 's/.*] *//' | sed 's/.*->  //'
+}
+
+_forgit_exec_diff() {
+    git diff --color=always "${_forgit_diff_git_opts[@]}" "$@"
+}
+
+_forgit_diff_view() {
+    local input_line=$1
+    local diff_context=$2
+    local commits=()
+    if [ $# -gt 2 ]; then
+        IFS=" " read -r -a commits <<< "${*:3}"
+    fi
+    echo "$input_line" | _forgit_get_files_from_diff_line | xargs -0 \
+        "$FORGIT" exec_diff "${commits[@]}" -U"$diff_context" -- | $_forgit_diff_pager
+}
+
+_forgit_edit_diffed_file() {
+    local input_line=$1
+    filename=$(echo "$input_line" | _forgit_get_single_file_from_diff_line)
+    $EDITOR "$filename" >/dev/tty </dev/tty
+}
+
+# git diff viewer
+_forgit_diff() {
+    _forgit_inside_work_tree || return 1
+    local files opts commits repo preview_cmd enter_cmd escaped_commits
+    [[ $# -ne 0 ]] && {
+        if git rev-parse "$1" -- &>/dev/null ; then
+            if [[ $# -gt 1 ]] && git rev-parse "$2" -- &>/dev/null; then
+                commits=("$1" "$2") && files=("${@:3}")
+            else
+                commits=("$1") && files=("${@:2}")
+            fi
+        else
+            files=("$@")
+        fi
+    }
+    repo="$(git rev-parse --show-toplevel)"
     # Git stashes are named "stash@{x}", which contains the fzf placeholder "{x}".
     # In order to support passing stashes as arguments to _forgit_diff, we have to
     # prevent fzf from interpreting this substring by escaping the opening bracket.
     # The string is evaluated a few subsequent times, so we need multiple escapes.
-    escaped_commits=${commits//\{/\\\\\{}
-    git_diff="git diff --color=always $FORGIT_DIFF_GIT_OPTS $escaped_commits"
-    preview_cmd="cd '$repo' && $get_files | xargs -0 $git_diff -U$_forgit_preview_context -- | $_forgit_diff_pager"
-    enter_cmd="cd '$repo' && $get_files | xargs -0 $git_diff -U$_forgit_fullscreen_context -- | $_forgit_diff_pager"
+    for commit in "${commits[@]}"; do
+        escaped_commits+="'${commit//\{/\\\\\{}' "
+    done
+    preview_cmd="cd '$repo' && $FORGIT diff_view {} $_forgit_preview_context $escaped_commits"
+    enter_cmd="cd '$repo' && $FORGIT diff_view {} $_forgit_fullscreen_context $escaped_commits"
     opts="
         $FORGIT_FZF_DEFAULT_OPTS
         +m -0 --bind=\"enter:execute($enter_cmd | $_forgit_enter_pager)\"
         --preview=\"$preview_cmd\"
-        --bind=\"alt-e:execute-silent($EDITOR \\\"\$\($get_file)\\\" >/dev/tty </dev/tty)+refresh-preview\"
+        --bind=\"alt-e:execute($FORGIT edit_diffed_file {})+refresh-preview\"
         $FORGIT_DIFF_FZF_OPTS
-        --prompt=\"$commits > \"
+        --prompt=\"${commits[*]} > \"
     "
-    eval "git diff --name-status $FORGIT_DIFF_GIT_OPTS $commits -- ${files[*]} | sed -E 's/^([[:alnum:]]+)[[:space:]]+(.*)$/[\1]	\2/'" |
+    git diff --name-status "${_forgit_diff_git_opts[@]}" "${commits[@]}" -- "${files[@]}" |
+        sed -E 's/^([[:alnum:]]+)[[:space:]]+(.*)$/[\1]	\2/' |
         sed 's/	/  ->  /2' | expand -t 8 |
         FZF_DEFAULT_OPTS="$opts" fzf
     fzf_exit_code=$?
@@ -833,6 +864,9 @@ private_commands=(
     "yank_sha"
     "log_preview"
     "log_enter"
+    "exec_diff"
+    "diff_view"
+    "edit_diffed_file"
 )
 
 cmd="$1"
