@@ -465,9 +465,13 @@ _forgit_cherry_pick() {
     $git_cherry_pick "${commits[@]}"
 }
 
+_forgit_cherry_pick_from_branch_preview() {
+    git log --right-only --color=always --cherry-pick --oneline "$1"..."$2"
+}
+
 _forgit_cherry_pick_from_branch() {
     _forgit_inside_work_tree || return 1
-    local cmd preview opts branch exitval input_branch args base
+    local opts branch exitval input_branch args base
 
     base=$(git branch --show-current)
     [[ -z "$base" ]] && echo "Current commit is not on a branch." && return 1
@@ -476,12 +480,10 @@ _forgit_cherry_pick_from_branch() {
     if [[ $# -ne 0 ]]; then
         input_branch=${args[0]}
     fi
-    cmd="git branch --color=always --all | LC_ALL=C sort -k1.1,1.1 -rs"
-    preview="git log --right-only --color=always --cherry-pick --oneline $base...{1}"
     opts="
         $FORGIT_FZF_DEFAULT_OPTS
         +s +m --tiebreak=index --header-lines=1
-        --preview=\"$preview\"
+        --preview=\"$FORGIT cherry_pick_from_branch_preview \"$base\" {1}\"
         $FORGIT_CHERRY_PICK_FROM_BRANCH_FZF_OPTS
         "
     # loop until either the branch selector is closed or a commit to be cherry
@@ -489,7 +491,10 @@ _forgit_cherry_pick_from_branch() {
     while true
     do
         if [[ -z $input_branch ]]; then
-            branch="$(eval "$cmd" | FZF_DEFAULT_OPTS="$opts" fzf | awk '{print $1}')"
+            branch="$(git branch --color=always --all |
+            LC_ALL=C sort -k1.1,1.1 -rs |
+            FZF_DEFAULT_OPTS="$opts" fzf |
+            awk '{print $1}')"
         else
             branch=$input_branch
         fi
@@ -862,6 +867,7 @@ private_commands=(
     "branch_preview"
     "checkout_commit_preview"
     "checkout_file_preview"
+    "cherry_pick_from_branch_preview"
     "file_preview"
     "git_branch_delete"
     "git_checkout_commit"
