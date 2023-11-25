@@ -143,6 +143,8 @@ _forgit_checkout_file_git_opts=()
 _forgit_parse_array _forgit_checkout_file_git_opts "$FORGIT_CHECKOUT_FILE_GIT_OPTS"
 _forgit_cherry_pick_git_opts=()
 _forgit_parse_array _forgit_cherry_pick_git_opts "$FORGIT_CHERRY_PICK_GIT_OPTS"
+_forgit_clean_git_opts=()
+_forgit_parse_array _forgit_clean_git_opts "$FORGIT_CLEAN_GIT_OPTS"
 
 _forgit_checkout_branch_branch_git_opts=()
 _forgit_parse_array _forgit_checkout_branch_branch_git_opts "$FORGIT_CHECKOUT_BRANCH_BRANCH_GIT_OPTS"
@@ -411,8 +413,7 @@ _forgit_stash_push() {
 _forgit_clean() {
     _forgit_inside_work_tree || return 1
     _forgit_contains_non_flags "$@" && { git clean -q "$@"; return $?; }
-    local git_clean files opts
-    git_clean="git clean $FORGIT_CLEAN_GIT_OPTS"
+    local files opts
     opts="
         $FORGIT_FZF_DEFAULT_OPTS
         -m -0
@@ -420,8 +421,7 @@ _forgit_clean() {
     "
     # Note: Postfix '/' in directory path should be removed. Otherwise the directory itself will not be removed.
     files=$(git clean -xdffn "$@"| sed 's/^Would remove //' | FZF_DEFAULT_OPTS="$opts" fzf |sed 's#/$##')
-    # shellcheck disable=2086
-    [[ -n "$files" ]] && echo "$files" | tr '\n' '\0' | xargs -0 -I% $git_clean -xdff '%' && git status --short && return
+    [[ -n "$files" ]] && echo "$files" | tr '\n' '\0' | xargs -0 -I% git clean "${_forgit_clean_git_opts[@]}" -xdff '%' && git status --short && return
     echo 'Nothing to clean.'
 }
 
