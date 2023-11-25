@@ -163,7 +163,7 @@ _forgit_log_format=${FORGIT_LOG_FORMAT:-%C(auto)%h%d %s %C(black)%C(bold)%cr%Cre
 _forgit_log_preview_options=("--graph" "--pretty=format:$_forgit_log_format" "--color=always" "--abbrev-commit" "--date=relative")
 _forgit_fullscreen_context=${FORGIT_FULLSCREEN_CONTEXT:-10}
 _forgit_preview_context=${FORGIT_PREVIEW_CONTEXT:-3}
-_forgit_is_file_tracked="(git ls-files {} --error-unmatch) &> /dev/null"
+
 _forgit_is_file_tracked() {
     git ls-files "$1" --error-unmatch &> /dev/null
 }
