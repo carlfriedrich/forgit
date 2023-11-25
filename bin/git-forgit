@@ -145,6 +145,8 @@ _forgit_cherry_pick_git_opts=()
 _forgit_parse_array _forgit_cherry_pick_git_opts "$FORGIT_CHERRY_PICK_GIT_OPTS"
 _forgit_clean_git_opts=()
 _forgit_parse_array _forgit_clean_git_opts "$FORGIT_CLEAN_GIT_OPTS"
+_forgit_stash_push_git_opts=()
+_forgit_parse_array _forgit_stash_push_git_opts "$FORGIT_STASH_PUSH_GIT_OPTS"
 
 _forgit_checkout_branch_branch_git_opts=()
 _forgit_parse_array _forgit_checkout_branch_branch_git_opts "$FORGIT_CHECKOUT_BRANCH_BRANCH_GIT_OPTS"
@@ -371,11 +373,22 @@ _forgit_stash_show() {
     return $fzf_exit_code
 }
 
+_forgit_stash_push_preview() {
+    if _forgit_is_file_tracked "$1"; then
+        git diff --color=always "$1" | $_forgit_diff_pager
+    else
+        git diff --color=always /dev/null "$1" | $_forgit_diff_pager
+    fi
+}
+
+_forgit_git_stash_push() {
+    git stash push "${_forgit_stash_push_git_opts[@]}" "$@"
+}
+
 # git stash push selector
 _forgit_stash_push() {
     _forgit_inside_work_tree || return 1
-    local git_stash_push msg args
-    git_stash_push="git stash push $FORGIT_STASH_PUSH_GIT_OPTS"
+    local msg args
     args=( "$@" )
     while (( "$#" )); do
         case "$1" in
@@ -387,26 +400,19 @@ _forgit_stash_push() {
             # ignore -u as it's used implicitly
             -u|--include-untracked) shift ;;
             # pass to git directly when encountering anything else
-            *) $git_stash_push "${args[@]}"; return $?
+            *) _forgit_git_stash_push "${args[@]}"; return $?
         esac
     done
-    local opts preview files
+    local opts files
     opts="
         $FORGIT_FZF_DEFAULT_OPTS
         -m
         $FORGIT_STASH_PUSH_FZF_OPTS
     "
-    preview="
-        if $_forgit_is_file_tracked; then
-            git diff --color=always {} | $_forgit_diff_pager
-        else
-            git diff --color=always /dev/null {} | $_forgit_diff_pager
-        fi
-    "
     # Show both modified and untracked files
-    files=$(git ls-files --exclude-standard --modified --others | FZF_DEFAULT_OPTS="$opts" fzf --preview="$preview")
+    files=$(git ls-files --exclude-standard --modified --others | FZF_DEFAULT_OPTS="$opts" fzf --preview="$FORGIT stash_push_preview {}")
     [[ -z "$files" ]] && return 1
-    echo "${files[@]}" | tr '\n' '\0' | $git_stash_push ${msg:+-m "$msg"} -u --pathspec-file-nul --pathspec-from-file -
+    echo "${files[@]}" | tr '\n' '\0' | _forgit_git_stash_push ${msg:+-m "$msg"} -u --pathspec-file-nul --pathspec-from-file -
 }
 
 # git clean selector
@@ -876,6 +882,7 @@ private_commands=(
     "git_checkout_commit"
     "ignore_preview"
     "revert_preview"
+    "stash_push_preview"
     "yank_sha"
     "log_preview"
     "log_enter"
