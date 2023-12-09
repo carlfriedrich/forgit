@@ -84,6 +84,16 @@ _forgit_yank_sha() {
     echo "$1" | _forgit_extract_sha | ${FORGIT_COPY_CMD:-pbcopy}
 }
 
+# extract the first stash name in the input
+_forgit_extract_stash_name() {
+    cut -d: -f1 | tr -d '[:space:]'
+}
+
+# extract the first stash name and copy it to the clipboard
+_forgit_yank_stash_name() {
+    echo "$1" | _forgit_extract_stash_name | ${FORGIT_COPY_CMD:-pbcopy}
+}
+
 # parse a space separated string into an array
 # arrays parsed with this function are global
 _forgit_parse_array() {
@@ -147,6 +157,8 @@ _forgit_clean_git_opts=()
 _forgit_parse_array _forgit_clean_git_opts "$FORGIT_CLEAN_GIT_OPTS"
 _forgit_stash_push_git_opts=()
 _forgit_parse_array _forgit_stash_push_git_opts "$FORGIT_STASH_PUSH_GIT_OPTS"
+_forgit_stash_show_git_opts=()
+_forgit_parse_array _forgit_stash_show_git_opts "$FORGIT_STASH_SHOW_GIT_OPTS"
 
 _forgit_checkout_branch_branch_git_opts=()
 _forgit_parse_array _forgit_checkout_branch_branch_git_opts "$FORGIT_CHECKOUT_BRANCH_BRANCH_GIT_OPTS"
@@ -351,22 +363,27 @@ _forgit_reset_head() {
     echo 'Nothing to unstage.'
 }
 
+_forgit_stash_show_preview() {
+    echo "$1" | cut -d: -f1 | xargs -I% "$FORGIT" "git_stash_show" % | $_forgit_diff_pager
+}
+
+_forgit_git_stash_show() {
+    git stash show --color=always --ext-diff "$@"
+}
+
 # git stash viewer
 _forgit_stash_show() {
     _forgit_inside_work_tree || return 1
-    local git_stash_show git_stash_list cmd opts
-    git_stash_show="git stash show --color=always --ext-diff"
-    [[ $# -ne 0 ]] && { $git_stash_show "$@"; return $?; }
-    git_stash_list="git stash list $FORGIT_STASH_SHOW_GIT_OPTS"
-    cmd="echo {} |cut -d: -f1 |xargs -I% $git_stash_show % |$_forgit_diff_pager"
+    local opts
+    [[ $# -ne 0 ]] && { _forgit_git_stash_show "$@"; return $?; }
     opts="
         $FORGIT_FZF_DEFAULT_OPTS
-        +s +m -0 --tiebreak=index --bind=\"enter:execute($cmd | $_forgit_enter_pager)\"
-        --bind=\"ctrl-y:execute-silent(echo {} | cut -d: -f1 | tr -d '[:space:]' | ${FORGIT_COPY_CMD:-pbcopy})\"
-        --preview=\"$cmd\"
+        +s +m -0 --tiebreak=index --bind=\"enter:execute($FORGIT stash_show_preview {} | $_forgit_enter_pager)\"
+        --bind=\"ctrl-y:execute-silent($FORGIT yank_stash_name {})\"
+        --preview=\"$FORGIT stash_show_preview {}\"
         $FORGIT_STASH_FZF_OPTS
     "
-    $git_stash_list | FZF_DEFAULT_OPTS="$opts" fzf
+    git stash list "${_forgit_stash_show_git_opts[@]}" | FZF_DEFAULT_OPTS="$opts" fzf
     fzf_exit_code=$?
     # exit successfully on 130 (ctrl-c/esc)
     [[ $fzf_exit_code == 130 ]] && return 0
@@ -880,10 +897,13 @@ private_commands=(
     "file_preview"
     "git_branch_delete"
     "git_checkout_commit"
+    "git_stash_show"
     "ignore_preview"
     "revert_preview"
     "stash_push_preview"
+    "stash_show_preview"
     "yank_sha"
+    "yank_stash_name"
     "log_preview"
     "log_enter"
     "exec_diff"
