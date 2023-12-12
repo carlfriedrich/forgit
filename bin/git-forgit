@@ -131,6 +131,8 @@ _forgit_quote_files() {
 # this allows using them properly quoted without word splitting or glob expansion
 _forgit_log_git_opts=()
 _forgit_parse_array _forgit_log_git_opts "$FORGIT_LOG_GIT_OPTS"
+_forgit_add_git_opts=()
+_forgit_parse_array _forgit_add_git_opts "$FORGIT_ADD_GIT_OPTS"
 _forgit_diff_git_opts=()
 _forgit_parse_array _forgit_diff_git_opts "$FORGIT_DIFF_GIT_OPTS"
 _forgit_reset_head_git_opts=()
@@ -305,43 +307,54 @@ _forgit_diff() {
     return $fzf_exit_code
 }
 
+_forgit_add_preview() {
+    file=$(echo "$1" | _forgit_get_single_file_from_add_line)
+    if (git status -s -- "$file" | grep '^??') &>/dev/null; then  # diff with /dev/null for untracked files
+        git diff --color=always --no-index -- /dev/null "$file" | $_forgit_diff_pager | sed '2 s/added:/untracked:/'
+    else
+        git diff --color=always -- "$file" | $_forgit_diff_pager
+    fi
+}
+
+_forgit_git_add() {
+    git add "${_forgit_add_git_opts[@]}" "$@"
+}
+
+_forgit_get_single_file_from_add_line() {
+    # NOTE: paths listed by 'git status -su' mixed with quoted and unquoted style
+    # remove indicators | remove original path for rename case | remove surrounding quotes
+    sed 's/^.*]  //' |
+    sed 's/.* -> //' |
+    sed -e 's/^\"//' -e 's/\"$//'
+}
+
+_forgit_edit_add_file() {
+    $EDITOR "$(echo "$1" | _forgit_get_single_file_from_add_line)" >/dev/tty </dev/tty
+}
+
 # git add selector
 _forgit_add() {
     _forgit_inside_work_tree || return 1
-    local git_add changed unmerged untracked files opts preview extract
-    git_add="git add $FORGIT_ADD_GIT_OPTS"
+    local changed unmerged untracked files opts
     # Add files if passed as arguments
-    [[ $# -ne 0 ]] && { $git_add "$@" && git status -su; return $?; }
+    [[ $# -ne 0 ]] && { _forgit_git_add "$@" && git status -su; return $?; }
 
     changed=$(git config --get-color color.status.changed red)
     unmerged=$(git config --get-color color.status.unmerged red)
     untracked=$(git config --get-color color.status.untracked red)
-    # NOTE: paths listed by 'git status -su' mixed with quoted and unquoted style
-    # remove indicators | remove original path for rename case | remove surrounding quotes
-    extract="
-        sed 's/^.*]  //' |
-        sed 's/.* -> //' |
-        sed -e 's/^\\\"//' -e 's/\\\"\$//'"
-    preview="
-        file=\$(echo {} | $extract)
-        if (git status -s -- \\\"\$file\\\" | grep '^??') &>/dev/null; then  # diff with /dev/null for untracked files
-            git diff --color=always --no-index -- /dev/null \\\"\$file\\\" | $_forgit_diff_pager | sed '2 s/added:/untracked:/'
-        else
-            git diff --color=always -- \\\"\$file\\\" | $_forgit_diff_pager
-        fi"
     opts="
         $FORGIT_FZF_DEFAULT_OPTS
         -0 -m --nth 2..,..
-        --preview=\"$preview\"
-        --bind=\"alt-e:execute-silent($EDITOR \\\"\$\(echo {} | $extract\)\\\" >/dev/tty </dev/tty)+refresh-preview\"
+        --preview=\"$FORGIT add_preview {}\"
+        --bind=\"alt-e:execute-silent($FORGIT edit_add_file {})+refresh-preview\"
         $FORGIT_ADD_FZF_OPTS
     "
     files=$(git -c color.status=always -c status.relativePaths=true status -su |
         grep -F -e "$changed" -e "$unmerged" -e "$untracked" |
         sed -E 's/^(..[^[:space:]]*)[[:space:]]+(.*)$/[\1]  \2/' |
         FZF_DEFAULT_OPTS="$opts" fzf |
-        sh -c "$extract")
-    [[ -n "$files" ]] && echo "$files"| tr '\n' '\0' | $git_add --pathspec-file-nul --pathspec-from-file - && git status -su && return
+        _forgit_get_single_file_from_add_line)
+    [[ -n "$files" ]] && echo "$files"| tr '\n' '\0' | _forgit_git_add --pathspec-file-nul --pathspec-from-file - && git status -su && return
     echo 'Nothing to add.'
 }
 
@@ -895,6 +908,7 @@ public_commands=(
 )
 
 private_commands=(
+    "add_preview"
     "blame_preview"
     "branch_preview"
     "checkout_commit_preview"
@@ -918,6 +932,7 @@ private_commands=(
     "exec_diff"
     "diff_view"
     "edit_diffed_file"
+    "edit_add_file"
 )
 
 cmd="$1"
