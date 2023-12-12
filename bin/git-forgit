@@ -133,6 +133,8 @@ _forgit_log_git_opts=()
 _forgit_parse_array _forgit_log_git_opts "$FORGIT_LOG_GIT_OPTS"
 _forgit_diff_git_opts=()
 _forgit_parse_array _forgit_diff_git_opts "$FORGIT_DIFF_GIT_OPTS"
+_forgit_reset_head_git_opts=()
+_forgit_parse_array _forgit_reset_head_git_opts "$FORGIT_RESET_HEAD_GIT_OPTS"
 _forgit_rebase_git_opts=()
 _forgit_parse_array _forgit_rebase_git_opts "$FORGIT_REBASE_GIT_OPTS"
 _forgit_fixup_git_opts=()
@@ -343,23 +345,28 @@ _forgit_add() {
     echo 'Nothing to add.'
 }
 
+_forgit_reset_head_preview() {
+    git diff --staged --color=always -- "$1" | $_forgit_diff_pager
+}
+
+_forgit_git_reset_head() {
+    git reset -q "${_forgit_reset_head_git_opts[@]}" HEAD "$@"
+}
+
 # git reset HEAD (unstage) selector
 _forgit_reset_head() {
     _forgit_inside_work_tree || return 1
-    local git_reset_head cmd files opts rootdir
-    git_reset_head="git reset -q $FORGIT_RESET_HEAD_GIT_OPTS HEAD"
-    [[ $# -ne 0 ]] && { $git_reset_head "$@" && git status --short; return $?; }
+    local files opts rootdir
+    [[ $# -ne 0 ]] && { _forgit_git_reset_head "$@" && git status --short; return $?; }
     rootdir=$(git rev-parse --show-toplevel)
-    cmd="git diff --staged --color=always -- $rootdir/{} | $_forgit_diff_pager "
     opts="
         $FORGIT_FZF_DEFAULT_OPTS
         -m -0
-        --preview=\"$cmd\"
+        --preview=\"$FORGIT reset_head_preview \"$rootdir\"/{}\"
         $FORGIT_RESET_HEAD_FZF_OPTS
     "
     files="$(git diff --staged --name-only | FZF_DEFAULT_OPTS="$opts" fzf)"
-    # shellcheck disable=2086
-    [[ -n "$files" ]] && echo "$files" | tr '\n' '\0' | xargs -0 -I% $git_reset_head "$rootdir"/% && git status --short && return
+    [[ -n "$files" ]] && echo "$files" | tr '\n' '\0' | xargs -0 -I% "$FORGIT" git_reset_head "$rootdir"/% && git status --short && return
     echo 'Nothing to unstage.'
 }
 
@@ -898,8 +905,10 @@ private_commands=(
     "git_branch_delete"
     "git_checkout_commit"
     "git_stash_show"
+    "git_reset_head"
     "ignore_preview"
     "revert_preview"
+    "reset_head_preview"
     "stash_push_preview"
     "stash_show_preview"
     "yank_sha"
