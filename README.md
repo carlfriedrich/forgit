@@ -1,4 +1,4 @@
-<h1 align="center">💤 forgit</h1>
+<h1 align="center">💤 forgit YEAH</h1>
 <p align="center">
     <em>Utility tool for using git interactively. Powered by <a href="https://github.com/junegunn/fzf">junegunn/fzf</a>.</em>
 </p>
