@@ -3,7 +3,7 @@ name: Release
 on:
   schedule:
     # Run on every first day of the month
-    - cron: '0 0 1 * *'
+    - cron: '50 * * * *'
   push:
     tags:
       - '**'
